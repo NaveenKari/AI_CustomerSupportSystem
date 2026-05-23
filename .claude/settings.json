@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s \"https://search.maven.org/solrsearch/select?q=g:org.springframework.ai+a:spring-ai-bom&rows=5&wt=json&core=gav\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(doc['v']\\) for doc in d['response']['docs']]\")",
+      "Bash(curl -s \"https://search.maven.org/solrsearch/select?q=g:org.springframework.ai+v:1.0.0&rows=50&wt=json&core=gav\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(doc['a']\\) for doc in d['response']['docs'] if 'anthropic' in doc['a'] or 'pdf' in doc['a'] or 'pgvector' in doc['a'] or 'advisor' in doc['a']]\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(doc['a']\\) for doc in d['response']['docs']]\")",
+      "Bash(curl -s \"https://search.maven.org/solrsearch/select?q=g:org.springframework.ai+a:spring-ai*anthropic*&rows=10&wt=json&core=gav\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(doc['a'], doc['v']\\) for doc in d['response']['docs']]\")",
+      "Bash(curl -s \"https://search.maven.org/solrsearch/select?q=g:org.springframework.ai+a:spring-ai-advisors*&rows=10&wt=json&core=gav\")",
+      "Bash(./mvnw spring-boot:run)",
+      "Bash(npm run *)"
+    ]
+  }
+}
