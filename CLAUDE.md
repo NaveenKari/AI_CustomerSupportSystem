@@ -34,7 +34,7 @@ See [PROJECT_PLAN.md](PROJECT_PLAN.md) for full feature scope and [TECH_STACK.md
 ### Frontend (`/frontend`)
 
 ```bash
-# Run dev server (defaults to port 5173, falls back to 5174+)
+# Run dev server (fixed on port 5174, strictPort — will not increment)
 npm run dev
 
 # Build for production
@@ -45,7 +45,39 @@ npm run lint
 
 # Preview production build
 npm run preview
+
+# Run tests
+npm test
+
+# Watch mode
+npx vitest
 ```
+
+---
+
+## Testing
+
+### Backend (`/backend`)
+
+| File | Type | Covers |
+|------|------|--------|
+| `AuthControllerTest.java` | Unit (Mockito) | Controller logic — login success/failure, logout, me authenticated/unauthenticated |
+| `AuthApiTest.java` | Integration (MockMvc) | Full HTTP layer with Spring Security — all auth endpoints + public health |
+| `AuthFlowTest.java` | E2E (real HTTP, random port) | Complete login → access → logout → blocked flow |
+
+Run: `./mvnw test -Dtest="AuthControllerTest,AuthApiTest,AuthFlowTest"`
+
+### Frontend (`/frontend`)
+
+Test framework: **Vitest** + **React Testing Library**. Setup file: `src/test/setup.js`.
+
+| File | Type | Covers |
+|------|------|--------|
+| `AuthContext.test.jsx` | Unit | AuthContext — loading state, /me 401, login/logout state transitions |
+| `LoginPage.test.jsx` | Integration | LoginPage component — render, success redirect, error display |
+| `AuthFlow.test.jsx` | E2E-style | Full routing — unauthenticated redirect, authenticated home, nav, logout |
+
+All tests mock `fetch` via `vi.stubGlobal`. No real network calls.
 
 ---
 
