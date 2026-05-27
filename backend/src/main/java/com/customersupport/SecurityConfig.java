@@ -51,8 +51,9 @@ public class SecurityConfig {
     }
 
     @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-        var mapper = new ObjectMapper();
+    public SecurityFilterChain filterChain(HttpSecurity http, ObjectMapper mapper) throws Exception {
+        // ObjectMapper is injected (Spring-managed) so it respects application-wide Jackson config
+        // (e.g. write-dates-as-timestamps=false), instead of a bare new ObjectMapper().
 
         http
             .cors(cors -> cors.configure(http))
@@ -61,7 +62,7 @@ public class SecurityConfig {
                 session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)
             )
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/api/health", "/api/auth/**").permitAll()
+                .requestMatchers("/api/health", "/api/auth/**", "/api/webhook/**").permitAll()
                 .anyRequest().authenticated()
             )
             .formLogin(form -> form.disable())

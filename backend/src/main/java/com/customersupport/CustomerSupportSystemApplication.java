@@ -2,13 +2,11 @@ package com.customersupport;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
-import org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration;
 import org.springframework.ai.vectorstore.pgvector.autoconfigure.PgVectorStoreAutoConfiguration;
 
+// PgVectorStoreAutoConfiguration remains excluded until an EmbeddingModel bean is added
+// (Anthropic/Claude does not provide an embeddings API — needs OpenAI or another provider)
 @SpringBootApplication(exclude = {
-    DataSourceAutoConfiguration.class,
-    HibernateJpaAutoConfiguration.class,
     PgVectorStoreAutoConfiguration.class
 })
 public class CustomerSupportSystemApplication {

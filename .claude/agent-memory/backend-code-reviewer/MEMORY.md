@@ -1,0 +1,2 @@
+- [Security baseline — auth, webhook, properties](project_security_baseline.md) — committed DB/admin passwords, no webhook signature verification, public route patterns
+- [Ticket management — architecture and technical debt](project_ticket_management.md) — no pagination, no DB indexes, ddl-auto=update, dead TicketMessageRepository method
