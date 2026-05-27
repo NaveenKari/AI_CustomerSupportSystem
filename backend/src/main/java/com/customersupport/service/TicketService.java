@@ -3,6 +3,9 @@ package com.customersupport.service;
 import com.customersupport.dto.*;
 import com.customersupport.model.*;
 import com.customersupport.repository.TicketRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
@@ -28,12 +31,14 @@ public class TicketService {
     // ── Read ──────────────────────────────────────────────────────────────────
 
     @Transactional(readOnly = true)
-    public List<TicketSummaryResponse> getAllTickets(
+    public Page<TicketSummaryResponse> getAllTickets(
             TicketStatus status,
             TicketCategory category,
             String keyword,
             LocalDate from,
-            LocalDate to) {
+            LocalDate to,
+            int page,
+            int size) {
 
         Specification<Ticket> spec = Specification.where(null);
 
@@ -60,11 +65,8 @@ public class TicketService {
             spec = spec.and((root, q, cb) -> cb.lessThanOrEqualTo(root.get("createdAt"), toEnd));
         }
 
-        Sort sort = Sort.by(Sort.Direction.DESC, "createdAt");
-        return ticketRepository.findAll(spec, sort)
-                .stream()
-                .map(this::toSummary)
-                .toList();
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+        return ticketRepository.findAll(spec, pageable).map(this::toSummary);
     }
 
     @Transactional(readOnly = true)
