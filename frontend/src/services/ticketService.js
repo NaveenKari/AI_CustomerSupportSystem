@@ -6,25 +6,28 @@ const jsonOpts = {
 };
 
 /**
- * Fetch ticket list with optional filters.
- * @param {Object} filters
- * @param {string} [filters.status]   - TicketStatus enum string e.g. "NEW"
- * @param {string} [filters.category] - TicketCategory enum string e.g. "BILLING"
- * @param {string} [filters.keyword]  - searches subject and customerEmail
- * @param {string} [filters.from]     - ISO date "YYYY-MM-DD"
- * @param {string} [filters.to]       - ISO date "YYYY-MM-DD"
- * @returns {Promise<TicketSummaryResponse[]>}
+ * Fetch a paginated ticket list with optional filters.
+ * @param {Object} opts
+ * @param {string} [opts.status]   - TicketStatus enum string e.g. "NEW"
+ * @param {string} [opts.category] - TicketCategory enum string e.g. "BILLING"
+ * @param {string} [opts.keyword]  - searches subject and customerEmail
+ * @param {string} [opts.from]     - ISO date "YYYY-MM-DD"
+ * @param {string} [opts.to]       - ISO date "YYYY-MM-DD"
+ * @param {number} [opts.page=0]   - zero-based page index
+ * @param {number} [opts.size=10]  - page size
+ * @returns {Promise<SpringPage<TicketSummaryResponse>>} Spring Page object with content[], totalElements, totalPages, number
  */
-export async function getTickets({ status, category, keyword, from, to } = {}) {
+export async function getTickets({ status, category, keyword, from, to, page = 0, size = 10 } = {}) {
   const params = new URLSearchParams();
-  if (status)   params.set('status', status);
-  if (category) params.set('category', category);
-  if (keyword)  params.set('keyword', keyword);
-  if (from)     params.set('from', from);
-  if (to)       params.set('to', to);
+  if (status)            params.set('status', status);
+  if (category)          params.set('category', category);
+  if (keyword)           params.set('keyword', keyword);
+  if (from)              params.set('from', from);
+  if (to)                params.set('to', to);
+  params.set('page', page);
+  params.set('size', size);
 
-  const url = params.toString() ? `${BASE}?${params}` : BASE;
-  const res = await fetch(url, { credentials: 'include' });
+  const res = await fetch(`${BASE}?${params}`, { credentials: 'include' });
   if (!res.ok) throw new Error('Failed to fetch tickets');
   return res.json();
 }
@@ -88,5 +91,17 @@ export async function updateTicketStatus(id, status) {
     body: JSON.stringify({ status }),
   });
   if (!res.ok) throw new Error('Failed to update status');
+  return res.json();
+}
+
+/**
+ * Fetch the latest pre-computed dashboard metrics snapshot.
+ * @returns {Promise<DashboardStatsResponse>}
+ *   { totalTickets, ticketsToday, ticketsThisWeek, openOlderThan24h,
+ *     computedAt, byStatus, byCategory }
+ */
+export async function getStats() {
+  const res = await fetch(`${BASE}/stats`, { credentials: 'include' });
+  if (!res.ok) throw new Error('Failed to fetch dashboard stats');
   return res.json();
 }

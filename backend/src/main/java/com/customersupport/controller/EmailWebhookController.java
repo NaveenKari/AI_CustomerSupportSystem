@@ -1,12 +1,17 @@
 package com.customersupport.controller;
 
 import com.customersupport.dto.CreateTicketRequest;
+import com.customersupport.dto.TicketDetailResponse;
 import com.customersupport.model.TicketCategory;
+import com.customersupport.service.AiService;
 import com.customersupport.service.TicketService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -22,16 +27,29 @@ import java.util.regex.Pattern;
  * The /api/webhook/** path is allowed in SecurityConfig.
  *
  * Always returns 200 OK — SendGrid retries on any non-2xx response, causing duplicate tickets.
+ *
+ * Reply threading:
+ *   Outgoing reply emails embed "[Ticket #42]" in the subject.
+ *   When a customer replies, SendGrid forwards the email back here.
+ *   This controller extracts the ticket ID and appends the message to the existing thread
+ *   instead of creating a new ticket.
  */
 @RestController
 @RequestMapping("/api/webhook")
 public class EmailWebhookController {
 
+    private static final Logger log = LoggerFactory.getLogger(EmailWebhookController.class);
+
     // Matches "Display Name <email@example.com>" or bare "email@example.com"
     private static final Pattern SENDER_PATTERN =
             Pattern.compile("^(?:(.+?)\\s*<([^>]+)>|([^<]+))$");
 
+    // Matches "[Ticket #42]" anywhere in the subject line
+    private static final Pattern TICKET_ID_PATTERN =
+            Pattern.compile("\\[Ticket #(\\d+)\\]");
+
     private final TicketService ticketService;
+    private final AiService aiService;
 
     /**
      * Optional shared secret. If set (non-blank), every inbound webhook request must supply
@@ -41,8 +59,9 @@ public class EmailWebhookController {
     @Value("${app.webhook.secret:}")
     private String webhookSecret;
 
-    public EmailWebhookController(TicketService ticketService) {
+    public EmailWebhookController(TicketService ticketService, AiService aiService) {
         this.ticketService = ticketService;
+        this.aiService = aiService;
     }
 
     @PostMapping(value = "/email", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -60,17 +79,40 @@ public class EmailWebhookController {
 
         String body = resolveBody(text, html);
         ParsedSender sender = parseSender(from);
+        String cleanSubject = truncate(subject.isBlank() ? "(No Subject)" : subject, 500);
 
-        // Truncate to match Ticket entity column lengths (prevents DB overflow from malicious payloads)
+        // ── Reply threading ────────────────────────────────────────────────────
+        // If the subject contains "[Ticket #N]", this is a customer reply to an
+        // existing thread — append the message instead of creating a new ticket.
+        Long existingTicketId = extractTicketId(cleanSubject);
+        if (existingTicketId != null) {
+            try {
+                ticketService.addCustomerReply(existingTicketId, body.isBlank() ? "(empty)" : body);
+                log.info("EmailWebhookController: customer reply appended to ticket #{}", existingTicketId);
+                return ResponseEntity.ok().build();
+            } catch (ResponseStatusException e) {
+                // Ticket not found — fall through and create a new ticket
+                log.warn("EmailWebhookController: ticket #{} not found for threaded reply — creating new ticket", existingTicketId);
+            }
+        }
+
+        // ── New ticket ─────────────────────────────────────────────────────────
         CreateTicketRequest req = new CreateTicketRequest(
-                truncate(subject.isBlank() ? "(No Subject)" : subject, 500),
+                cleanSubject,
                 truncate(sender.email(), 254),
                 truncate(sender.name(), 200),
                 body.isBlank() ? "(empty)" : body,
-                TicketCategory.GENERAL_INQUIRY   // AI categorization added in a later phase
+                TicketCategory.GENERAL_INQUIRY   // AiService will update this asynchronously
         );
 
-        ticketService.createTicket(req);
+        TicketDetailResponse created = ticketService.createTicket(req);
+        log.info("EmailWebhookController: new ticket #{} created for {}", created.id(), sender.email());
+
+        // Fire-and-forget: AI categorises + auto-responds in a background thread.
+        // The webhook returns 200 before Claude finishes, preventing SendGrid timeouts.
+        aiService.processNewTicket(
+                created.id(), cleanSubject, body,
+                sender.email(), sender.name());
 
         // Always return 200 — SendGrid will retry on non-2xx, causing duplicate tickets
         return ResponseEntity.ok().build();
@@ -136,6 +178,27 @@ public class EmailWebhookController {
         }
         // Fallback
         return new ParsedSender(from.trim(), from.trim());
+    }
+
+    /**
+     * Extracts a ticket ID from a subject line containing "[Ticket #N]".
+     * Returns null if no such pattern is found.
+     * Examples:
+     *   "Re: [Ticket #42] My billing issue"  → 42L
+     *   "Re: Re: [Ticket #7] Help"           → 7L
+     *   "Hello there"                         → null
+     */
+    private Long extractTicketId(String subject) {
+        if (subject == null) return null;
+        Matcher m = TICKET_ID_PATTERN.matcher(subject);
+        if (m.find()) {
+            try {
+                return Long.parseLong(m.group(1));
+            } catch (NumberFormatException e) {
+                return null;
+            }
+        }
+        return null;
     }
 
     private String truncate(String value, int maxLength) {

@@ -3,6 +3,9 @@ package com.customersupport.service;
 import com.customersupport.dto.*;
 import com.customersupport.model.*;
 import com.customersupport.repository.TicketRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
@@ -20,20 +23,24 @@ import java.util.Locale;
 public class TicketService {
 
     private final TicketRepository ticketRepository;
+    private final EmailService emailService;
 
-    public TicketService(TicketRepository ticketRepository) {
+    public TicketService(TicketRepository ticketRepository, EmailService emailService) {
         this.ticketRepository = ticketRepository;
+        this.emailService = emailService;
     }
 
     // ── Read ──────────────────────────────────────────────────────────────────
 
     @Transactional(readOnly = true)
-    public List<TicketSummaryResponse> getAllTickets(
+    public Page<TicketSummaryResponse> getAllTickets(
             TicketStatus status,
             TicketCategory category,
             String keyword,
             LocalDate from,
-            LocalDate to) {
+            LocalDate to,
+            int page,
+            int size) {
 
         Specification<Ticket> spec = Specification.where(null);
 
@@ -60,11 +67,8 @@ public class TicketService {
             spec = spec.and((root, q, cb) -> cb.lessThanOrEqualTo(root.get("createdAt"), toEnd));
         }
 
-        Sort sort = Sort.by(Sort.Direction.DESC, "createdAt");
-        return ticketRepository.findAll(spec, sort)
-                .stream()
-                .map(this::toSummary)
-                .toList();
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+        return ticketRepository.findAll(spec, pageable).map(this::toSummary);
     }
 
     @Transactional(readOnly = true)
@@ -118,7 +122,67 @@ public class TicketService {
         }
 
         ticketRepository.save(ticket);
+
+        // Email the customer — fires after the DB save so the reply is persisted
+        // even if email delivery fails. EmailService never throws.
+        emailService.sendReplyToCustomer(
+                ticket.getCustomerEmail(), ticket.getCustomerName(),
+                ticket.getSubject(), body, id);
+
         return toDetail(ticket);
+    }
+
+    /**
+     * Updates the ticket's category. Called by AiService after async categorisation.
+     */
+    @Transactional
+    public void updateCategory(Long id, TicketCategory category) {
+        Ticket ticket = findOrThrow(id);
+        ticket.setCategory(category);
+        ticketRepository.save(ticket);
+    }
+
+    /**
+     * Saves an AI-generated reply and transitions the ticket to AI_RESPONDED.
+     * Called by AiService — never by the agent UI.
+     */
+    @Transactional
+    public void aiReplyToTicket(Long id, String body) {
+        Ticket ticket = findOrThrowWithMessages(id);
+
+        TicketMessage msg = new TicketMessage();
+        msg.setTicket(ticket);
+        msg.setSenderType(SenderType.AI);
+        msg.setBody(body);
+        ticket.getMessages().add(msg);
+        ticket.setStatus(TicketStatus.AI_RESPONDED);
+
+        ticketRepository.save(ticket);
+    }
+
+    /**
+     * Appends a customer reply (inbound email thread) to an existing ticket.
+     * Status transitions:
+     *   AI_RESPONDED → PENDING_HUMAN  (customer replied to AI, needs human attention)
+     *   RESOLVED     → PENDING_HUMAN  (customer reopened a closed ticket)
+     *   all others   → unchanged      (IN_PROGRESS / NEW / PENDING_HUMAN stay as-is)
+     */
+    @Transactional
+    public void addCustomerReply(Long id, String body) {
+        Ticket ticket = findOrThrowWithMessages(id);
+
+        TicketMessage msg = new TicketMessage();
+        msg.setTicket(ticket);
+        msg.setSenderType(SenderType.CUSTOMER);
+        msg.setBody(body);
+        ticket.getMessages().add(msg);
+
+        if (ticket.getStatus() == TicketStatus.AI_RESPONDED
+                || ticket.getStatus() == TicketStatus.RESOLVED) {
+            ticket.setStatus(TicketStatus.PENDING_HUMAN);
+        }
+
+        ticketRepository.save(ticket);
     }
 
     @Transactional
