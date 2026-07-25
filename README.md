@@ -88,7 +88,7 @@ stateDiagram-v2
 
 ---
 
-## Tech stack
+## Tech Stack
 
 **Backend** — Spring Boot 3.5.3, Java 21, Spring Security (session auth), Spring Data JPA, PostgreSQL, Spring AI (Claude via `spring-ai-starter-model-anthropic`), pgvector (knowledge base, in progress), SendGrid (inbound parse + outbound send).
 
